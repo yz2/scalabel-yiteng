@@ -101,6 +101,10 @@ export function SatImage(sat, index, url) {
 
   self.isMouseDown = false;
   self._hiddenMap = new HiddenMap();
+
+  // 3D related
+  self.frontness = 0.0;
+  self.rightness = 0.0;
 }
 
 SatImage.prototype = Object.create(SatItem.prototype);
@@ -570,6 +574,77 @@ SatImage.prototype.redrawLabelCanvas = function() {
       label.redrawLabelCanvas(self.labelCtx, self.hoveredLabel);
     }
   }
+  self.drawArrowLabel();
+  self.drawPlaneLabel();
+};
+
+SatImage.prototype.rotatePoint = function(point) {
+  let self = this;
+  let [x0, y0, z0] = point;
+  let x_to_y = self.padBox.w / self.padBox.h;
+  let z_to_y = 1.0;
+  let [xy0, yy0, zy0] = [x0 * x_to_y, y0, (z0 - 1.0) * z_to_y];
+  let rx = self.frontness / 180.0 * Math.PI;
+  let [xy1, yy1, zy1] = [xy0, Math.cos(rx) * yy0 - Math.sin(rx) * zy0, Math.sin(rx) * yy0 + Math.cos(rx) * zy0];
+  let rz = self.rightness / 180.0 * Math.PI;
+  let [xy2, yy2, zy2] = [Math.cos(rz) * xy1 - Math.sin(rz) * yy1, Math.sin(rz) * xy1 + Math.cos(rz) * yy1, zy1];
+  return [xy2 / x_to_y, yy2, zy2 / z_to_y + 1.0];
+};
+
+SatImage.prototype.convertPoint = function(point) {
+  let self = this;
+  let [x, y, z] = self.rotatePoint(point);
+  return [self.padBox.x + self.padBox.w * (0.5 + x / z), self.padBox.y + self.padBox.h * (0.5 + y / z), 1]
+};
+
+SatImage.prototype.drawArrowLabel = function() {
+  let self = this;
+  let [x0, y0, z0] = self.convertPoint([0, 0, 1]);
+  let [x1, y1, z1] = self.convertPoint([0, -1.0/6, 1]);
+  let ctx = self.labelCtx;
+  ctx.strokeStyle = "#FF0000";
+  ctx.lineWidth = 6;
+  ctx.beginPath();
+  ctx.moveTo(x0 * UP_RES_RATIO, y0 * UP_RES_RATIO);
+  ctx.lineTo(x1 * UP_RES_RATIO, y1 * UP_RES_RATIO);
+  // ctx.lineTo((x1 + 10) * UP_RES_RATIO, (y1 + 10) * UP_RES_RATIO);
+  // ctx.moveTo(x1 * UP_RES_RATIO, y1 * UP_RES_RATIO);
+  // ctx.lineTo((x1 - 10) * UP_RES_RATIO, (y1 + 10) * UP_RES_RATIO);
+  ctx.stroke();
+};
+
+SatImage.prototype.drawPlaneLabel = function() {
+  let self = this;
+  // assumed near = 5m
+  let lane_width = 0.3; // 3/2 = 1.5m
+  let lane_height = 0.5; // 2.5m
+  let rectangle_configs = [[3.0, 0.5, 10.0], [1.0, 1.0, 5.0]];
+  let ctx = self.labelCtx;
+  ctx.fillStyle = "red";
+  ctx.globalAlpha = 0.25;
+  for (let [dx, dz0, dz1] in rectangle_configs) {
+    let [x0, y0, z0] = self.convertPoint([-lane_width * dx, lane_height, dz0]);
+    let [x1, y1, z1] = self.convertPoint([-lane_width * dx, lane_height, dz1]);
+    let [x2, y2, z2] = self.convertPoint([lane_width * dx, lane_height, dz1]);
+    let [x3, y3, z3] = self.convertPoint([lane_width * dx, lane_height, dz0]);
+    ctx.beginPath();
+    ctx.moveTo(x0 * UP_RES_RATIO, y0 * UP_RES_RATIO);
+    ctx.lineTo(x1 * UP_RES_RATIO, y1 * UP_RES_RATIO);
+    ctx.lineTo(x2 * UP_RES_RATIO, y2 * UP_RES_RATIO);
+    ctx.lineTo(x3 * UP_RES_RATIO, y3 * UP_RES_RATIO);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1.0;
+};
+
+SatImage.prototype.drawPointLabel = function(point) {
+  let self = this;
+  let [x, y, z] = self.convertPoint(point);
+  let ctx = self.labelCtx;
+  ctx.strokeStyle = "#FF0000";
+  ctx.lineWidth = 10;
+  ctx.strokeRect(x * UP_RES_RATIO, y * UP_RES_RATIO, 5 * UP_RES_RATIO, 5 * UP_RES_RATIO);
 };
 
 /**
@@ -646,6 +721,17 @@ SatImage.prototype._keydown = function(e) {
   self.updateLabelCount();
   if (keyID === 68) { // d for debug
     self.showHiddenCanvas();
+  } else {
+    if (keyID === 65) { // a for rotate counterclockwise
+      self.rightness -= 1.0;
+    } else if (keyID === 68) { // d for rotate clockwise
+      self.rightness += 1.0;
+    } else if (keyID === 87) { // w for more flatness
+      self.frontness -= 1.0;
+    } else if (keyID === 83) { // s for less flatness
+      self.frontness += 1.0;
+    }
+    self.redrawLabelCanvas();
   }
 };
 
